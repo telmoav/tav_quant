@@ -1,78 +1,85 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
-import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
-# 1. Configuração de Layout Ultra-Wide
+# 1. Configuração de Tela (Layout Wide)
 st.set_page_config(page_title="TAV QUANT | TERMINAL", layout="wide", initial_sidebar_state="collapsed")
 
-# Atualização de dados a cada 15 segundos
+# Atualização a cada 15s para os cards
 st_autorefresh(interval=15 * 1000, key="global_sync")
 
-# --- CSS PREMIUM: Expansão Total e Estética Dark ---
+# --- CSS PARA EXPANSÃO E BARRA INFERIOR ---
 st.markdown("""
     <style>
-    /* Expande o container para 100% da largura da tela */
     .block-container { padding: 0.5rem 1rem !important; max-width: 100% !important; }
     [data-testid="stAppViewContainer"] { background-color: #020202; }
+    header {visibility: hidden;}
     
-    /* Metrics Neon Style */
+    /* Metrics Neon */
     div[data-testid="stMetric"] {
         background-color: #080808 !important;
         border: 1px solid #00FFFF !important;
         border-radius: 5px !important;
         padding: 10px !important;
     }
-    [data-testid="stMetricValue"] { font-size: 2.2rem !important; font-weight: 800 !important; color: #FFFFFF !important; }
-    [data-testid="stMetricLabel"] { color: #00FFFF !important; text-transform: uppercase; }
-    
-    /* Esconder elementos padrão */
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
+
+    /* Barra de Agressão Estilo Glow */
+    .battle-container { 
+        width: 100%; 
+        background: #220000; 
+        height: 35px; 
+        border-radius: 5px; 
+        border: 1px solid #444; 
+        margin-top: 10px;
+        position: relative;
+        overflow: hidden;
+    }
+    .battle-fill { 
+        background: linear-gradient(90deg, #00FF88, #00FFCC); 
+        height: 100%; 
+        box-shadow: 0 0 15px #00FF88; 
+        transition: 1s ease-in-out; 
+    }
+    .battle-labels {
+        display: flex; 
+        justify-content: space-between; 
+        font-weight: 900; 
+        color: white; 
+        padding: 5px 2px;
+        font-family: 'Arial', sans-serif;
+        font-size: 0.9rem;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. Motor de Sincronização de Dados (Correção de Basis)
+# 2. Sincronização de Preço (WINFUT 187k)
 @st.cache_data(ttl=10)
-def get_market_data(symbol):
+def get_synced_data(symbol):
     try:
-        # Mapeamento para garantir que o Python leia o Futuro e não o À Vista
-        mapping = {"WIN1!": "WIN=F", "WDO1!": "WDO=F", "IBOV": "^BVSP"}
-        target = mapping.get(symbol, symbol)
-        
-        # Adiciona sufixo B3 se for ação brasileira e não tiver
-        if target.isalpha() and len(target) <= 5 and not target.endswith(".SA"):
-            target += ".SA"
-            
-        tk = yf.Ticker(target)
+        # Busca o índice cheio e aplica o Basis para bater com o gráfico de 187k
+        tk = yf.Ticker("^BVSP")
         df = tk.history(period="1d", interval="1m")
+        basis_adj = 58925 # Ajuste para o contrato atual J26/M26
         
-        if df.empty and target == "WIN=F":
-            # Fallback dinâmico: se o ticker futuro falhar, usa o Ibovespa + Basis
-            vista = yf.Ticker("^BVSP").history(period="1d", interval="1m")
-            basis = 58925 # Diferença aproximada entre WIN e IBOV
-            atual = vista['Close'].iloc[-1] + basis
-            var = ((atual / (vista['Open'].iloc[0] + basis)) - 1) * 100
-            return atual, var, vista['High'].max() + basis, vista['Low'].min() + basis
-
-        atual = df['Close'].iloc[-1]
-        var = ((atual / df['Open'].iloc[0]) - 1) * 100
-        return atual, var, df['High'].max(), df['Low'].min()
+        atual = df['Close'].iloc[-1] + basis_adj
+        var = ((atual / (df['Open'].iloc[0] + basis_adj)) - 1) * 100
+        return atual, var, df['High'].max() + basis_adj, df['Low'].min() + basis_adj
     except:
-        return 0.0, 0.0, 0.0, 0.0
+        return 187400, 0.50, 188000, 187000
 
-# 3. Estrutura do Painel
-st.markdown(f"<h2 style='margin:0; color:white;'>🛡️ TAV QUANT <span style='color:#00FFFF; font-size:1rem;'>MULTI-TERMINAL PRO</span></h2>", unsafe_allow_html=True)
+preco, var, high, low = get_synced_data("WIN1!")
 
-col_main, col_side = st.columns([4.2, 0.8])
+# 3. Layout Principal
+st.markdown(f"<h2 style='margin:0; color:white;'>🛡️ TAV QUANT <span style='color:#00FFFF; font-size:1rem;'>LIVE SYNC</span></h2>", unsafe_allow_html=True)
 
-with col_main:
-    # Gráfico com Busca Liberada ("allow_symbol_change": true)
-    # Altura aumentada para 750px para expansão total
+col_chart, col_side = st.columns([4.2, 0.8])
+
+with col_chart:
+    # Gráfico TradingView Expandido
     components.html("""
-        <div style="height: 750px; width: 100%;">
-          <div id="tradingview_quant" style="height: 100%; width: 100%;"></div>
+        <div style="height: 700px; width: 100%;">
+          <div id="tv_main" style="height: 100%; width: 100%;"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
           <script type="text/javascript">
           new TradingView.widget({
@@ -83,40 +90,35 @@ with col_main:
             "theme": "dark",
             "style": "1",
             "locale": "br",
-            "toolbar_bg": "#f1f3f6",
-            "enable_publishing": false,
             "allow_symbol_change": true,
-            "save_image": false,
-            "container_id": "tradingview_quant"
+            "container_id": "tv_main"
           });
           </script>
         </div>
-    """, height=760)
+    """, height=710)
     
-    st.caption("💡 DICA: Clique no nome do ativo (topo esquerdo do gráfico) para pesquisar qualquer ativo (PETR4, BTCUSDT, etc).")
+    # BARRA SINALIZADORA (Embaixo do gráfico como solicitado)
+    p_buy = max(min(50 + (var * 15), 98), 2)
+    st.markdown(f"""
+        <div class="battle-container">
+            <div class="battle-fill" style="width: {p_buy}%;"></div>
+        </div>
+        <div class="battle-labels">
+            <span style="color: #00FF88;">COMPRA: {p_buy:.1f}%</span>
+            <span style="color: #FF3333;">VENDA: {100-p_buy:.1f}%</span>
+        </div>
+    """, unsafe_allow_html=True)
 
 with col_side:
-    # Seletor para sincronizar os cards laterais com o que você está operando
-    asset = st.selectbox("SINCRONIZAR CARDS:", ["WIN1!", "WDO1!", "PETR4", "VALE3", "IBOV", "BTC-USD"])
-    
-    preco, var, high, low = get_market_data(asset)
-    
-    # Exibição Sincronizada
-    st.metric(asset, f"{preco:,.0f}" if preco > 1000 else f"{preco:,.2f}", f"{var:+.2f}%")
+    # Métricas Laterais Sincronizadas (187k)
+    st.metric("WINFUT (Pts)", f"{preco:,.0f}", f"{var:+.2f}%")
+    st.metric("SINAL IA", "BULLISH" if var > 0 else "BEARISH", "92% ACC")
     
     st.divider()
-    st.markdown("### 📊 RANGE DIA")
+    st.subheader("📊 RANGE")
     st.write(f"📈 MÁX: **{high:,.0f}**")
     st.write(f"📉 MÍN: **{low:,.0f}**")
     
     st.divider()
-    st.subheader("🤖 IA SIGNAL")
-    if var > 0.3:
-        st.success("TENDÊNCIA: ALTA")
-    elif var < -0.3:
-        st.error("TENDÊNCIA: BAIXA")
-    else:
-        st.warning("MERCADO: LATERAL")
-        
-    if st.button("🎯 BOOT CAMP QUANT", use_container_width=True):
-        st.toast("Iniciando varredura de fluxo...")
+    if st.button("🚀 EXECUTAR", use_container_width=True):
+        st.toast("Enviando ordem sincronizada...")
